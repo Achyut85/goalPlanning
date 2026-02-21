@@ -11,7 +11,7 @@ const {
   outPutLumpSum,
   hybridCalculation,
   hybridOutput,
-} = require("../constant/goalPlanningPrompt.js");
+} = require("../constants/goalPlanningPrompt.js");
 
 const { buildPromptInput } = require("../utils/goalPlanningInputMapper.js"); 
 

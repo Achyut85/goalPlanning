@@ -1,4 +1,4 @@
-const { validateGoalPlanningInput } = require("../utils/validateGoalPlanningInput.U");
+const { validateGoalPlanningInput } = require("../utils/validateGoalPlanningInput");
 
 describe("Goal Planning Validation - Full Coverage", () => {
 

@@ -1,5 +1,5 @@
-const { validateBySchema } = require("./validation.U.js");
-
+const { validateBySchema } = require("./validation.js");
+const {VALID_MODES } = require("../constants/goalPlanning.js")
 const retirementGoalSchema = {
   type: { type: "string", required: true },
   currentAge: { type: "adultAge", required: true },
@@ -55,9 +55,8 @@ const financeSchema = {
     type: "string",
     required: true,
     custom: (value) => {
-      const valid = ["sip", "lumpsum", "hybrid"];
-      return !valid.includes(value?.toLowerCase())
-        ? `investmentMode must be one of: ${valid.join(", ")}`
+      return !VALID_MODES.includes(value?.toLowerCase())
+        ? `investmentMode must be one of: ${VALID_MODES.join(", ")}`
         : null;
     }
   },

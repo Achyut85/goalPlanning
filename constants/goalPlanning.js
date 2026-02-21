@@ -1,0 +1,57 @@
+
+
+const INVESTMENT_MODE = Object.freeze({
+  SIP: "sip",
+  LUMPSUM: "lumpsum",
+  HYBRID: "hybrid",
+});
+
+const VALID_MODES = Object.freeze(Object.values(INVESTMENT_MODE));
+
+
+
+const GOAL_STATUS = Object.freeze({
+  ACHIEVABLE: "Achievable",
+  PARTIALLY_ACHIEVABLE: "Partially Achievable",
+  NOT_ACHIEVABLE: "Not Achievable",
+});
+
+const HYBRID_ALLOWED_STATUS = Object.freeze([
+  GOAL_STATUS.ACHIEVABLE,
+  GOAL_STATUS.PARTIALLY_ACHIEVABLE,
+  GOAL_STATUS.NOT_ACHIEVABLE,
+]);
+
+const HYBRID_STRATEGY = Object.freeze({
+  SIP_LUMPSUM: "SIP + Lumpsum Hybrid",
+  LUMPSUM_ONLY: "Lumpsum Only",
+});
+
+const HYBRID_ALLOWED_STRATEGIES = Object.freeze([
+  HYBRID_STRATEGY.SIP_LUMPSUM,
+  HYBRID_STRATEGY.LUMPSUM_ONLY,
+]);
+
+
+
+
+const ERROR_CODES = Object.freeze({
+  INVALID_OBJECT: "INVALID_OBJECT",
+  INVALID_MODE: "INVALID_MODE",
+  REQUIRED: "REQUIRED",
+  SCHEMA_NOT_FOUND: "SCHEMA_NOT_FOUND",
+  MATH_ERROR: "MATH_ERROR",
+  CONSISTENCY_ERROR: "CONSISTENCY_ERROR",
+});
+
+
+
+module.exports = {
+  INVESTMENT_MODE,
+  VALID_MODES,
+  GOAL_STATUS,
+  HYBRID_ALLOWED_STATUS,
+  HYBRID_STRATEGY,
+  HYBRID_ALLOWED_STRATEGIES,
+  ERROR_CODES,
+};

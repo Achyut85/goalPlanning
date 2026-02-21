@@ -1,7 +1,7 @@
 
-const { validateBySchema } = require("./validation.U.js");
+const { validateBySchema } = require("./validation.js");
 
-
+const {INVESTMENT_MODE , VALID_MODES} = require("../constants/goalPlanning.js")
 const isApproximatelyEqual = (a, b, tolerance = 0.1) =>
   Math.abs(a - b) <= tolerance;
 
@@ -13,7 +13,7 @@ const validateFinancialIntegrity = (output, mode) => {
   const m = mode?.trim()?.toLowerCase();
 
   // SIP MODE
-  if (m === "sip" && output.sip) {
+  if (m === INVESTMENT_MODE.SIP && output.sip) {
     if (!isApproximatelyEqual(
       output.sip.equity_sip + output.sip.debt_sip,
       output.sip.total_sip
@@ -27,7 +27,7 @@ const validateFinancialIntegrity = (output, mode) => {
   }
 
   // LUMPSUM MODE
-  if (m === "lumpsum" && output.lumpsum) {
+  if (m === INVESTMENT_MODE.LUMPSUM && output.lumpsum) {
     if (!isApproximatelyEqual(
       output.lumpsum.equity_lumpsum + output.lumpsum.debt_lumpsum,
       output.lumpsum.total_lumpsum
@@ -41,7 +41,7 @@ const validateFinancialIntegrity = (output, mode) => {
   }
 
   // HYBRID MODE
-  if (m === "hybrid" && output.goal?.status !== "Not Achievable") {
+  if (m === INVESTMENT_MODE.HYBRID && output.goal?.status !== "Not Achievable") {
 
     if (output.lumpsum &&
       !isApproximatelyEqual(
@@ -70,9 +70,6 @@ const validateFinancialIntegrity = (output, mode) => {
 
   return errors;
 };
-
-
-
 
 
 
@@ -244,29 +241,169 @@ const hybridNotAchievableSchema = {
 }
 
 
-const pickOutputSchema = (output, mode) => {
-  const m = mode?.trim()?.toLowerCase();
+const validateSIPOutput = (output) => {
+  const errors = [];
+
   const status = output?.goal?.status;
 
-  switch (m) {
-    case "sip":
-      return status === "Not Achievable"
-        ? sipNotAchievableSchema
-        : sipAchievableSchema
+  const schema =
+    status === "Not Achievable"
+      ? sipNotAchievableSchema
+      : sipAchievableSchema;
 
-    case "lumpsum":
-      return status === "Not Achievable"
-        ? lumpsumNotAchievableSchema
-        : lumpsumAchievableSchema
+  // Schema validation
+  validateBySchema(output, schema, "", errors, true);
 
-    case "hybrid":
-      return status === "Not Achievable"
-        ? hybridNotAchievableSchema
-        : hybridOutputSchema
-
-    default:
-      return null;
+  // Financial math validation
+  if (
+    errors.length === 0 &&
+    status === "Achievable"
+  ) {
+    errors.push(
+      ...validateFinancialIntegrity(output, INVESTMENT_MODE.SIP)
+    );
   }
+
+  return errors;
+};
+
+
+const validateLumpsumOutput = (output) => {
+  const errors = [];
+
+  const status = output?.goal?.status;
+
+  const schema =
+    status === "Not Achievable"
+      ? lumpsumNotAchievableSchema
+      : lumpsumAchievableSchema;
+
+  // Schema validation
+  validateBySchema(output, schema, "", errors, true);
+
+  // Financial math validation
+  if (
+    errors.length === 0 &&
+    status === "Achievable"
+  ) {
+    errors.push(
+      ...validateFinancialIntegrity(output, INVESTMENT_MODE.LUMPSUM)
+    );
+  }
+
+  return errors;
+};
+
+
+const validateHybridOutput = (output) => {
+  const errors = [];
+
+  const status = output?.goal?.status;
+
+  const schema =
+    status === "Not Achievable"
+      ? hybridNotAchievableSchema
+      : hybridOutputSchema;
+
+  // Schema validation
+  validateBySchema(output, schema, "", errors, true);
+
+  // Hybrid-specific business logic
+  if (
+    errors.length === 0 &&
+    status !== "Not Achievable"
+  ) {
+    const { feasibility, sip, goal } = output;
+
+    // 1️⃣ sip_affordable must match sip.affordable
+    if (feasibility?.sip_affordable !== sip?.affordable) {
+      errors.push({
+        path: "feasibility.sip_affordable",
+        code: "CONSISTENCY_ERROR",
+        message: "feasibility.sip_affordable must match sip.affordable",
+      });
+    }
+
+    // 2️⃣ When SIP is affordable
+    if (feasibility?.sip_affordable === true) {
+      if (goal.status !== "Achievable") {
+        errors.push({
+          path: "goal.status",
+          code: "CONSISTENCY_ERROR",
+          message: 'When SIP is affordable, status must be "Achievable"',
+        });
+      }
+
+      if (goal.recommended_strategy !== "SIP + Lumpsum Hybrid") {
+        errors.push({
+          path: "goal.recommended_strategy",
+          code: "CONSISTENCY_ERROR",
+          message:
+            'When SIP is affordable, strategy must be "SIP + Lumpsum Hybrid"',
+        });
+      }
+
+      if (sip.shortfall !== 0) {
+        errors.push({
+          path: "sip.shortfall",
+          code: "CONSISTENCY_ERROR",
+          message: "When SIP is affordable, shortfall must be 0",
+        });
+      }
+    }
+
+    // 3️⃣ When SIP is NOT affordable
+    if (feasibility?.sip_affordable === false) {
+      if (
+        !["Partially Achievable", "Not Achievable"].includes(goal.status)
+      ) {
+        errors.push({
+          path: "goal.status",
+          code: "CONSISTENCY_ERROR",
+          message:
+            'When SIP is not affordable, status must be "Partially Achievable" or "Not Achievable"',
+        });
+      }
+
+      if (goal.recommended_strategy !== "Lumpsum Only") {
+        errors.push({
+          path: "goal.recommended_strategy",
+          code: "CONSISTENCY_ERROR",
+          message:
+            'When SIP is not affordable, strategy must be "Lumpsum Only"',
+        });
+      }
+
+      if (sip.shortfall === 0) {
+        errors.push({
+          path: "sip.shortfall",
+          code: "CONSISTENCY_ERROR",
+          message:
+            "When SIP is not affordable, shortfall must be greater than 0",
+        });
+      }
+    }
+  }
+
+  // Financial math validation
+  if (
+    errors.length === 0 &&
+    status === "Achievable"
+  ) {
+    errors.push(
+      ...validateFinancialIntegrity(output, INVESTMENT_MODE.HYBRID)
+    );
+  }
+
+  return errors;
+};
+
+
+
+const MODE_VALIDATORS = {
+  [INVESTMENT_MODE.SIP]: validateSIPOutput,
+  [INVESTMENT_MODE.LUMPSUM]: validateLumpsumOutput,
+  [INVESTMENT_MODE.HYBRID]: validateHybridOutput,
 };
 
 const validateGoalPlanningOutput = (output, mode) => {
@@ -281,129 +418,22 @@ const validateGoalPlanningOutput = (output, mode) => {
     };
   }
 
-  const validModes = ["sip", "lumpsum", "hybrid"];
-  if (!validModes.includes(mode?.trim()?.toLowerCase())) {
+  const normalizedMode = mode?.trim()?.toLowerCase();
+
+  if (!VALID_MODES.includes(normalizedMode)) {
     return {
       valid: false,
       errors: [{
         path: "mode",
         code: "INVALID_MODE",
-        message: `mode must be one of: ${validModes.join(", ")}`,
+        message: `mode must be one of: ${VALID_MODES.join(", ")}`,
       }],
     };
   }
 
-  if (!output.goal || typeof output.goal !== "object" || Array.isArray(output.goal)) {
-    return {
-      valid: false,
-      errors: [{
-        path: "goal",
-        code: "REQUIRED",
-        message: "goal block is required and must be a valid object",
-      }],
-    };
-  }
+  const validator = MODE_VALIDATORS[normalizedMode];
 
-  if (!output.goal.status) {
-    return {
-      valid: false,
-      errors: [{
-        path: "goal.status",
-        code: "REQUIRED",
-        message: "goal.status is required to determine output schema",
-      }],
-    };
-  }
-
-  const schema = pickOutputSchema(output, mode);
-  if (!schema) {
-    return {
-      valid: false,
-      errors: [{
-        path: "root",
-        code: "SCHEMA_NOT_FOUND",
-        message: `No schema found for mode="${mode}"`,
-      }],
-    };
-  }
-
-  const errors = [];
-  validateBySchema(output, schema, "", errors, true);
-
-  // Hybrid-specific logical consistency checks
-  if (
-    mode?.trim()?.toLowerCase() === "hybrid" &&
-    output.goal?.status !== "Not Achievable" &&
-    errors.length === 0
-  ) {
-    const { feasibility, sip, goal } = output;
-
-    // Check feasibility.sip_affordable matches sip.affordable
-    if (feasibility.sip_affordable !== sip.affordable) {
-      errors.push({
-        path: "feasibility.sip_affordable",
-        code: "CONSISTENCY_ERROR",
-        message: "feasibility.sip_affordable must match sip.affordable",
-      });
-    }
-
-    // Check strategy-status-affordability consistency
-    if (feasibility.sip_affordable === true) {
-      if (goal.status !== "Achievable") {
-        errors.push({
-          path: "goal.status",
-          code: "CONSISTENCY_ERROR",
-          message: 'When SIP is affordable, status must be "Achievable"',
-        });
-      }
-      if (goal.recommended_strategy !== "SIP + Lumpsum Hybrid") {
-        errors.push({
-          path: "goal.recommended_strategy",
-          code: "CONSISTENCY_ERROR",
-          message: 'When SIP is affordable, strategy must be "SIP + Lumpsum Hybrid"',
-        });
-      }
-      if (sip.shortfall !== 0) {
-        errors.push({
-          path: "sip.shortfall",
-          code: "CONSISTENCY_ERROR",
-          message: "When SIP is affordable, shortfall must be 0",
-        });
-      }
-    }
-
-    if (feasibility.sip_affordable === false) {
-      if (!["Partially Achievable", "Not Achievable"].includes(goal.status)) {
-        errors.push({
-          path: "goal.status",
-          code: "CONSISTENCY_ERROR",
-          message: 'When SIP is not affordable, status must be "Partially Achievable" or "Not Achievable"',
-        });
-      }
-      if (goal.recommended_strategy !== "Lumpsum Only") {
-        errors.push({
-          path: "goal.recommended_strategy",
-          code: "CONSISTENCY_ERROR",
-          message: 'When SIP is not affordable, strategy must be "Lumpsum Only"',
-        });
-      }
-      if (sip.shortfall === 0) {
-        errors.push({
-          path: "sip.shortfall",
-          code: "CONSISTENCY_ERROR",
-          message: "When SIP is not affordable, shortfall must be greater than 0",
-        });
-      }
-    }
-  }
-
-  if (
-    errors.length === 0 &&
-    output.goal?.status === "Achievable"
-  ) {
-    const mathErrors = validateFinancialIntegrity(output, mode);
-    errors.push(...mathErrors);
-  }
+  const errors = validator(output);
 
   return {
     valid: errors.length === 0,

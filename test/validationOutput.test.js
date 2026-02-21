@@ -1,4 +1,4 @@
-const { validateGoalPlanningOutput } = require("../utils/validateGoalPlanningOutput.U");
+const { validateGoalPlanningOutput } = require("../utils/validateGoalPlanningOutput");
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
