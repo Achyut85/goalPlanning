@@ -1,18 +1,21 @@
 
 
-const mapGoalData = (goal) => {
-  const type = goal.type.trim().toLowerCase()
+const mapGoalData = (goal = {}) => {
+  const type =
+    typeof goal.type === "string"
+      ? goal.type.trim().toLowerCase()
+      : "unknown";
+
   if (type === "retirement") {
     return {
       goal_name: "Retirement",
       current_age: goal.currentAge,
       retirement_age: goal.retirementAge,
       life_expectancy: goal.lifeExpectancy,
-      target_monthly_amount: goal.targetMonthlyAmount
+      target_monthly_amount: goal.targetMonthlyAmount,
     };
   }
 
-  // Other goals
   return {
     goal_name: type,
     time_horizon_years: goal.timeHorizonYears,
@@ -22,7 +25,8 @@ const mapGoalData = (goal) => {
 
 
 
-const mapFinanceData = (finance) => {
+
+const mapFinanceData = (finance = {}) => {
   return {
     monthly_income: finance.monthlyIncome,
     monthly_expenses: finance.monthlyExpenses,
@@ -34,33 +38,47 @@ const mapFinanceData = (finance) => {
 
 
 
-const buildPromptInput = (requestBody , riskProfile, currentInflation) => {
-  const { goal, finance } = requestBody;
 
-  const mappedGoal = mapGoalData(goal);
-  const mappedFinance = mapFinanceData(finance);
+const mapRiskProfile = (riskProfile) => {
+  return {
+    risk_profile:
+      typeof riskProfile === "string"
+        ? riskProfile.toLowerCase()
+        : undefined
+  };
+};
 
 
-  const risk_profile = riskProfile;  
-  const inflation_rate = currentInflation;
+
+
+const mapSystemData = (system = {}) => {
+  return {
+    surplus: system.surplus,
+    inflation_rate: system.inflationRate,
+    investment_mode: system.investmentMode
+  };
+};
+
+
+
+
+const buildPromptInput = (enrichedInput) => {
+
+  const { goal, finance, riskProfile, system } = enrichedInput;
 
   const finalObject = {
-    ...mappedGoal,
-    ...mappedFinance,
-    risk_profile,
-    inflation_rate
+    ...mapGoalData(goal),
+    ...mapFinanceData(finance),
+    ...mapRiskProfile(riskProfile),
+    ...mapSystemData(system)
   };
 
   return Object.entries(finalObject)
+    .filter(([_, value]) => value !== undefined)
     .map(([key, value]) => `${key}: ${value}`)
     .join("\n");
 };
 
-
-
-
 module.exports = {
-    buildPromptInput,
+  buildPromptInput,
 };
-
-

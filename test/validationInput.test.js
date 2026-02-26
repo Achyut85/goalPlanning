@@ -2,18 +2,12 @@ const { validateGoalPlanningInput } = require("../utils/validateGoalPlanningInpu
 
 describe("Goal Planning Validation - Full Coverage", () => {
 
-  // ─────────────────────────────────────────────
-  // 🔧 Helpers
-  // ─────────────────────────────────────────────
   const hasError = (errors, path, code) =>
     errors.some(e => e.path === path && (code ? e.code === code : true));
 
   const hasMessage = (errors, text) =>
     errors.some(e => e.message.includes(text));
 
-  // ─────────────────────────────────────────────
-  // 🔧 Base fixtures
-  // ─────────────────────────────────────────────
   const baseGoal = {
     type: "retirement",
     currentAge: 30,
@@ -31,9 +25,6 @@ describe("Goal Planning Validation - Full Coverage", () => {
     investmentMode: "sip",
   };
 
-  // ════════════════════════════════════════════
-  // ✅ VALID CASES
-  // ════════════════════════════════════════════
   describe("Valid Cases", () => {
 
     test("Valid retirement input should pass", () => {

@@ -496,7 +496,6 @@ describe("Hybrid Mode - Not Achievable", () => {
     expect(result.valid).toBe(true);
   });
 
- 0
   test("fails when goal.status is wrong for not-achievable schema", () => {
     const output = makeHybridNotAchievable({
       goal: { type: "x", status: "Achievable", suggest: "y" },

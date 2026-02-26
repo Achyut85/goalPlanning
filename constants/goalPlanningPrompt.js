@@ -19,7 +19,7 @@ Aggressive: eq_w=0.80 dt_w=0.20 eq_r=0.15 dt_r=0.09`;
 const retirementFV = `
 th_y = retirement_age − current_age
 dur_y = life_expectancy − retirement_age
-ann_exp_now = target_monthly_amount × 12
+ann_exp_now = target_monthly_amount × 12c
 ann_exp_ret = ann_exp_now × (1+inf_r)^th_y
 blend_r = (eq_w×eq_r) + (dt_w×dt_r)
 real_r = ((1+blend_r)/(1+inf_r)) − 1
@@ -85,24 +85,24 @@ else { status = "Partially Achievable"; strategy = "Hybrid (Surplus Constrained)
 
 const outPutSip = `
 IF sip_ok=true:
-{"goal":{"type":"<goal>","status":"Achievable","suggest":"• ₹<tot_sip>/mo (₹<eq_sip> equity + ₹<dt_sip> debt) fits <risk_profile>\\n• ₹<tot_inv> grows to ₹<FV>, gain ₹<exp_gain>\\n• Expert fund selection maximizes returns\\n• Shift to debt 2-3yrs before goal"},"time_horizon_years":<th_y>,"amounts":{"total_goal_amount_future":<FV>,"equity_goal_amount":<eq_goal>,"debt_goal_amount":<dt_goal>},"sip":{"equity_sip":<v>,"debt_sip":<v>,"total_sip":<v>,"total_investment":<v>,"expected_gain":<v>},"returns":{"equity_return_rate":<eq_r>,"debt_return_rate":<dt_r>},"inflation_rate":<inf_r>}
+{"goal":{"type":"<goal>","status":"Achievable","suggest":"<suggest>":{"total_goal_amount_future":<FV>,"equity_goal_amount":<eq_goal>,"debt_goal_amount":<dt_goal>},"sip":{"equity_sip":<v>,"debt_sip":<v>,"total_sip":<v>,"total_investment":<v>,"expected_gain":<v>},"returns":{"equity_return_rate":<eq_r>,"debt_return_rate":<dt_r>},"inflation_rate":<inf_r>}
 
 IF sip_ok=false:
-{"goal":{"type":"<goal>","status":"Not Achievable","suggest":"• Need ₹<tot_sip>/mo, have ₹<surplus>, gap ₹<shortfall>\\n• Fix: extend timeline OR adjust goal OR increase surplus\\n• Small change makes goal achievable\\n• Let's model scenarios together"}}`;
+{"goal":{"type":"<goal>","status":"Not Achievable","suggest":"<suggest>"}}`;
 
 const outPutLumpSum = `
 IF ls_ok=true:
-{"goal":{"type":"<goal>","status":"Achievable","suggest":"• Lumpsum ₹<tot_ls> (₹<eq_ls> equity + ₹<dt_ls> debt) fits <risk_profile>\\n• Grows to ₹<FV>, gain ₹<exp_gain>\\n• Expert fund selection protects from timing risk\\n• Emergency fund stays protected"},"time_horizon_years":<th_y>,"amounts":{"total_goal_amount_future":<FV>,"equity_goal_amount":<eq_goal>,"debt_goal_amount":<dt_goal>},"lumpsum":{"equity_lumpsum":<v>,"debt_lumpsum":<v>,"total_lumpsum":<v>,"expected_gain":<v>},"returns":{"equity_return_rate":<eq_r>,"debt_return_rate":<dt_r>},"inflation_rate":<inf_r>}
+{"goal":{"type":"<goal>","status":"Achievable","suggest":"<suggest>":<FV>,"equity_goal_amount":<eq_goal>,"debt_goal_amount":<dt_goal>},"lumpsum":{"equity_lumpsum":<v>,"debt_lumpsum":<v>,"total_lumpsum":<v>,"expected_gain":<v>},"returns":{"equity_return_rate":<eq_r>,"debt_return_rate":<dt_r>},"inflation_rate":<inf_r>}
 
 IF ls_ok=false:
-{"goal":{"type":"<goal>","status":"Not Achievable","suggest":"• Need ₹<tot_ls>, have ₹<inv_sav>, gap ₹<shortfall>\\n• Emergency fund stays protected\\n• Solution: invest ₹<inv_sav> now + SIP to bridge\\n• Hybrid approach is smarter than waiting"}}`;
+{"goal":{"type":"<goal>","status":"Not Achievable","suggest":"<suggest>"}}`;
 
 const hybridOutput = `
 IF status="Not Achievable":
-{"goal":{"type":"<goal>","status":"Not Achievable","suggest":"• Full savings + surplus deployed falls short of goal\\n• Structural gap: extend timeline OR increase surplus OR resize goal\\n• Hybrid allocation remains most efficient strategy\\n• Let's recalibrate together"}}
+{"goal":{"type":"<goal>","status":"Not Achievable","suggest":"<suggest>"}}
 
 IF status="Achievable" OR status="Partially Achievable":
-{"goal":{"type":"<goal>","status":"<status>","recommended_strategy":"<strategy>","suggest":"• Lumpsum ₹<tot_ls> (₹<eq_ls> eq + ₹<dt_ls> dt) grows to ₹<tot_ls_fv>\\n• SIP ₹<tot_sip>/mo (₹<eq_sip> eq + ₹<dt_sip> dt) covers ₹<tot_rem> gap\\n• Total ₹<tot_inv> → ₹<FV>, gain ₹<exp_gain><IF !sip_ok: , shortfall ₹<short_sip>>\\n• Most capital-efficient approach"},"time_horizon_years":<th_y>,"feasibility":{"sip_affordable":<sip_ok>,"lumpsum_affordable":true},"amounts":{"total_goal_amount_future":<FV>,"equity_goal_amount":<eq_goal>,"debt_goal_amount":<dt_goal>},"sip":{"equity_sip":<v>,"debt_sip":<v>,"total_sip":<v>,"monthly_surplus":<surplus>,"shortfall":<short_sip>,"affordable":<sip_ok>},"lumpsum":{"equity_lumpsum":<v>,"debt_lumpsum":<v>,"total_lumpsum":<v>,"equity_lumpsum_fv":<v>,"debt_lumpsum_fv":<v>,"total_lumpsum_fv":<v>,"investable_savings":<v>,"affordable":true},"hybrid":{"equity_remaining":<v>,"debt_remaining":<v>,"total_remaining":<v>,"total_investment":<v>,"expected_gain":<v>},"returns":{"equity_return_rate":<eq_r>,"debt_return_rate":<dt_r>},"inflation_rate":<inf_r>}`;
+{"goal":{"type":"<goal>","status":"<status>","recommended_strategy":"<strategy>","suggest":"<suggest>"},"time_horizon_years":<th_y>,"feasibility":{"sip_affordable":<sip_ok>,"lumpsum_affordable":true},"amounts":{"total_goal_amount_future":<FV>,"equity_goal_amount":<eq_goal>,"debt_goal_amount":<dt_goal>},"sip":{"equity_sip":<v>,"debt_sip":<v>,"total_sip":<v>,"monthly_surplus":<surplus>,"shortfall":<short_sip>,"affordable":<sip_ok>},"lumpsum":{"equity_lumpsum":<v>,"debt_lumpsum":<v>,"total_lumpsum":<v>,"equity_lumpsum_fv":<v>,"debt_lumpsum_fv":<v>,"total_lumpsum_fv":<v>,"investable_savings":<v>,"affordable":true},"hybrid":{"equity_remaining":<v>,"debt_remaining":<v>,"total_remaining":<v>,"total_investment":<v>,"expected_gain":<v>},"returns":{"equity_return_rate":<eq_r>,"debt_return_rate":<dt_r>},"inflation_rate":<inf_r>}`;
 
 module.exports = {
   commonPrompt,

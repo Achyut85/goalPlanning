@@ -1,46 +1,75 @@
 const User = require("../models/users");
 
 
-const createUser = async (data) => {
-  return await User.create(data);
+const createUser = (data) => {
+  return User.create(data);
 };
 
 
-const getUserById = async (userId) => {
-  return await User.findById(userId);
+const getUserByExternalIds = (externalPid, externalUserId) => {
+  return User.findOne({
+    externalPid,
+    externalUserId,
+    isDeleted: false
+  }).lean();
 };
 
 
-const updateUserFinancials = async (userId, data) => {
-  return await User.findByIdAndUpdate(
-    userId,
+const updateUserFinancials = (externalPid, externalUserId, data) => {
+  return User.findOneAndUpdate(
+    {
+      externalPid,
+      externalUserId,
+      isDeleted: false
+    },
     { $set: data },
+    {
+      new: true,
+      runValidators: true
+    }
+  ).lean();
+};
+
+
+const softDeleteUser = (externalPid, externalUserId) => {
+  return User.findOneAndUpdate(
+    {
+      externalPid,
+      externalUserId,
+      isDeleted: false
+    },
+    { isDeleted: true },
     { new: true }
   );
 };
 
-const deleteUser = async (userId) => {
-  return await User.findByIdAndDelete(userId);
+
+const getUserFinancialSnapshot = (externalPid, externalUserId) => {
+  return User.findOne({
+    externalPid,
+    externalUserId,
+    isDeleted: false
+  })
+    .select("monthlyIncome monthlyExpenses emi riskProfile emergencyFundAmount")
+    .lean();
 };
 
 
-const getUserFinancialSnapshot = async (userId) => {
-  return await User.findById(userId).select(
-    "monthlyIncome monthlyExpenses emi riskProfile emergencyFundAmount"
-  );
-};
-
-const getUserBasicInfo = async (userId) => {
-  return await User.findById(userId)
+const getUserBasicInfo = (externalPid, externalUserId) => {
+  return User.findOne({
+    externalPid,
+    externalUserId,
+    isDeleted: false
+  })
     .select("name dateOfBirth")
     .lean();
 };
 
 module.exports = {
   createUser,
-  getUserById,
+  getUserByExternalIds,
   updateUserFinancials,
-  deleteUser,
+  softDeleteUser,
   getUserFinancialSnapshot,
   getUserBasicInfo
 };
