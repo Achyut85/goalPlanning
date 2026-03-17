@@ -1,135 +1,150 @@
 const { validateBySchema } = require("./validation.js");
+const { RISK_PROFILES, GOAL_TYPES } = require("../constants/goalPlanning.js");
 
-const RISK_PROFILES = [
-  "very conservative",
-  "conservative",
-  "moderate",
-  "aggressive",
-  "very aggressive"
-];
-
-
-const retirementGoalSchema = {
-  type: { type: "string", required: true },
-
-  currentAge: { type: "adultAge", required: true },
-
-  retirementAge: {
-    type: "adultAge",
+/* ─── BASE SCHEMA — applies to every goal ─────────────────────── */
+const baseSchema = {
+  goal_type: {
+    type: "string",
     required: true,
-    dependsOn: ["currentAge"],
-    custom: (value, data) =>
-      value <= data.currentAge
-        ? `Retirement age (${value}) must be greater than current age (${data.currentAge})`
-        : null
+    custom: (v) =>
+      !GOAL_TYPES.includes(v)
+        ? `goal_type must be one of: ${GOAL_TYPES.join(" | ")}`
+        : null,
   },
-
-  lifeExpectancy: {
-    type: "adultAge",
+  risk_profile: {
+    type: "string",
     required: true,
-    dependsOn: ["retirementAge"],
-    custom: (value, data) =>
-      value <= data.retirementAge
-        ? `Life expectancy (${value}) must be greater than retirement age (${data.retirementAge})`
-        : null
+    custom: (v) =>
+      !RISK_PROFILES.includes(v)
+        ? `risk_profile must be one of: ${RISK_PROFILES.join(" | ")}`
+        : null,
   },
+  monthly_income:        { type: "positive",    required: true  },
+  monthly_expenses:      { type: "nonNegative", required: true  },
+  current_savings:       { type: "nonNegative", required: true  },
+  emergency_fund_months: { type: "nonNegative", required: true  },
+  has_loan:              { type: "boolean",     required: false },
+  total_monthly_emi:     { type: "nonNegative", required: false },
+  total_outstanding_loan:{ type: "nonNegative", required: false },
+};
 
-  targetMonthlyAmount: {
+/* ─── GOAL-SPECIFIC SCHEMAS — merged on top of base ──────────── */
+
+const retirementSchema = {
+  current_age: {
     type: "positive",
-    required: true
+    required: true,
+    custom: (v) =>
+      !Number.isInteger(v) || v < 18 || v > 80
+        ? "current_age must be an integer between 18 and 80"
+        : null,
+  },
+  retirement_age: {
+    type: "positive",
+    required: true,
+    dependsOn: ["current_age"],
+    custom: (v, data) =>
+      v <= data.current_age
+        ? `retirement_age (${v}) must be greater than current_age (${data.current_age})`
+        : v - data.current_age < 5
+        ? "At least 5 years needed between current_age and retirement_age"
+        : null,
+  },
+  life_expectancy: {
+    type: "positive",
+    required: true,
+    dependsOn: ["retirement_age"],
+    custom: (v, data) => {
+      if (!Number.isInteger(v) || v < 60 || v > 120)
+        return "life_expectancy must be an integer between 60 and 120";
+      if (v <= data.retirement_age)
+        return `life_expectancy (${v}) must be greater than retirement_age (${data.retirement_age})`;
+      return null;
+    },
+  },
+  target_monthly_income: { type: "positive", required: true },
+};
+
+const houseSchema = {
+  // normaliser computes target_amount_today = propertyValue × downPaymentPct / 100
+  target_amount_today: { type: "positive", required: true },
+  horizon_years: {
+    type: "positive",
+    required: true,
+    custom: (v) => v < 1 ? "horizon_years must be at least 1" : null,
+  },
+};
+
+const emergencySchema = {
+  // normaliser maps: monthlyExpense → monthly_expenses (overrides base)
+  //                  targetMonths  → target_months
+  //                  existingMonths → existing_coverage_months
+  // NOTE: monthly_expenses is already in baseSchema — the override here
+  //       tightens it to "positive" (must be > 0 for emergency corpus calc)
+  monthly_expenses: { type: "positive", required: true },
+  target_months: {
+    type: "positive",
+    required: true,
+    custom: (v) =>
+      !Number.isInteger(v) || v < 1 || v > 24
+        ? "target_months must be an integer between 1 and 24"
+        : null,
+  },
+  existing_coverage_months: {
+    type: "nonNegative",
+    required: true,
+    dependsOn: ["target_months"],
+    custom: (v, data) =>
+      v >= data.target_months
+        ? `existing_coverage_months (${v}) must be less than target_months (${data.target_months})`
+        : null,
+  },
+};
+
+// marriage, education, vacation, wealth, business
+const defaultSchema = {
+  target_amount_today: { type: "positive", required: true },
+  horizon_years: {
+    type: "positive",
+    required: true,
+    custom: (v) => v < 1 ? "horizon_years must be at least 1" : null,
+  },
+};
+
+/* ─── SCHEMA SELECTOR ─────────────────────────────────────────── */
+const getGoalSchema = (goalType) => {
+  switch (goalType) {
+    case "retirement": return retirementSchema;
+    case "house":      return houseSchema;
+    case "emergency":  return emergencySchema;
+    default:           return defaultSchema;
   }
 };
 
-const defaultGoalSchema = {
-  type: { type: "string", required: true },
-
-  timeHorizonYears: {
-    type: "positive",
-    required: true,
-    min: 1
-  },
-
-  targetAmount: {
-    type: "positive",
-    required: true
-  }
-};
-
-
-
-const financeSchema = {
-  monthlyIncome:         { type: "positive",    required: true },
-  monthlyExpenses:       { type: "nonNegative", required: true },
-  emi:                   { type: "nonNegative", required: true },
-  currentSavings:        { type: "nonNegative", required: true },
-  emergencyFundRequired: { type: "nonNegative", required: true },
-};
-
-
-const rootSchema = {
-  goal: {
-    type: "object",
-    required: true,
-    schema: (goal = {}) => {
-      const type =
-        typeof goal.type === "string"
-          ? goal.type.trim().toLowerCase()
-          : undefined;
-
-      return type === "retirement"
-        ? retirementGoalSchema
-        : defaultGoalSchema;
-    }
-  },
-
-  finance: {
-    type: "object",
-    required: true,
-    schema: financeSchema
-  },
-
- riskProfile: {
-  type: "string",
-  required: true,
-  custom: (v) => {
-    return !RISK_PROFILES.includes(v)
-      ? `riskProfile must be one of: ${valid.join(" | ")}`
-      : null;
-  }
-}
-};
-
-
-
-const validateGoalPlanningInput = (
-  userInput,
-  stopOnFirstError = false
-) => {
-  const errors = [];
-
-  if (
-    !userInput ||
-    typeof userInput !== "object" ||
-    Array.isArray(userInput)
-  ) {
+/* ─── MAIN VALIDATOR ──────────────────────────────────────────── */
+const validateGoalPlanningInput = (input, stopOnFirstError = false) => {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
     return {
       valid: false,
-      errors: [{
-        path: "root",
-        code: "INVALID_OBJECT",
-        message: "Valid input object is required"
-      }]
+      errors: [{ path: "root", code: "INVALID_OBJECT", message: "Valid input object is required" }],
     };
   }
 
-  validateBySchema(userInput, rootSchema, "", errors, stopOnFirstError);
+  const goalType =
+    typeof input.goal_type === "string"
+      ? input.goal_type.trim().toLowerCase()
+      : null;
 
-  return {
-    valid: errors.length === 0,
-    errors
-  };
+  const goalSchema =
+    goalType && GOAL_TYPES.includes(goalType) ? getGoalSchema(goalType) : {};
+
+  // goal-specific schema merged after base — goal fields override base where keys overlap
+  const mergedSchema = { ...baseSchema, ...goalSchema };
+
+  const errors = [];
+  validateBySchema(input, mergedSchema, "", errors, stopOnFirstError);
+
+  return { valid: errors.length === 0, errors };
 };
 
-module.exports = {
-  validateGoalPlanningInput
-};
+module.exports = { validateGoalPlanningInput };

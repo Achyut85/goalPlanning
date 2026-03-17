@@ -1,444 +1,210 @@
-
 const { validateBySchema } = require("./validation.js");
+const {GOAL_TYPES} = require("../constants/goalPlanning.js")
 
-const {INVESTMENT_MODE , VALID_MODES} = require("../constants/goalPlanning.js")
-const isApproximatelyEqual = (a, b, tolerance = 0.1) =>
-  Math.abs(a - b) <= tolerance;
-
-
-
-
-const validateFinancialIntegrity = (output, mode) => {
-  const errors = [];
-  const m = mode?.trim()?.toLowerCase();
-
-  // SIP MODE
-  if (m === INVESTMENT_MODE.SIP && output.sip) {
-    if (!isApproximatelyEqual(
-      output.sip.equity_sip + output.sip.debt_sip,
-      output.sip.total_sip
-    )) {
-      errors.push({
-        path: "sip.total_sip",
-        code: "MATH_ERROR",
-        message: "equity_sip + debt_sip must equal total_sip",
-      });
-    }
-  }
-
-  // LUMPSUM MODE
-  if (m === INVESTMENT_MODE.LUMPSUM && output.lumpsum) {
-    if (!isApproximatelyEqual(
-      output.lumpsum.equity_lumpsum + output.lumpsum.debt_lumpsum,
-      output.lumpsum.total_lumpsum
-    )) {
-      errors.push({
-        path: "lumpsum.total_lumpsum",
-        code: "MATH_ERROR",
-        message: "equity_lumpsum + debt_lumpsum must equal total_lumpsum",
-      });
-    }
-  }
-
-  // HYBRID MODE
-  if (m === INVESTMENT_MODE.HYBRID && output.goal?.status !== "Not Achievable") {
-
-    if (output.lumpsum &&
-      !isApproximatelyEqual(
-        output.lumpsum.equity_lumpsum + output.lumpsum.debt_lumpsum,
-        output.lumpsum.total_lumpsum
-      )) {
-      errors.push({
-        path: "lumpsum.total_lumpsum",
-        code: "MATH_ERROR",
-        message: "Hybrid lumpsum components mismatch",
-      });
-    }
-
-    if (output.hybrid &&
-      !isApproximatelyEqual(
-        output.hybrid.equity_remaining + output.hybrid.debt_remaining,
-        output.hybrid.total_remaining
-      )) {
-      errors.push({
-        path: "hybrid.total_remaining",
-        code: "MATH_ERROR",
-        message: "Hybrid remaining components mismatch",
-      });
-    }
-  }
-
-  return errors;
-};
+const VALID_MODES         = ["SIP", "LumpSum", "Hybrid", "No Investment Required"];
+const VALID_AFFORDABILITY = ["Comfortable", "Stretch", "Not Realistic"];
+const VALID_HEALTH_STATUS = ["Excellent", "Good", "Fair", "At Risk"];
+const VALID_SUSTAIN       = ["Sustainable", "Unsustainable"];
 
 
 
-
-const amountsSchema = {
-  total_goal_amount_future: { type: "nonNegative", required: true },
-  equity_goal_amount: { type: "nonNegative", required: true },
-  debt_goal_amount: { type: "nonNegative", required: true },
-};
-
-const returnsSchema = {
-  equity_return_rate: { type: "nonNegative", required: true },
-  debt_return_rate: { type: "nonNegative", required: true },
-};
-
-const goalAchievableSchema = {
-  type: { type: "string", required: true },
-  status: {
-    type: "string", required: true,
-    custom: (v) =>
-      v !== "Achievable"
-        ? `goal.status must be "Achievable"` : null,
+const allocationSchema = {
+  equity_percent:  { type: "nonNegative", required: true },
+  debt_percent:    { type: "nonNegative", required: true },
+  liquid_percent:  { type: "nonNegative", required: true },
+  equity_sip_amount:   { type: "nonNegative", required: true },
+  debt_sip_amount:     { type: "nonNegative", required: true },
+  liquid_sip_amount:   { type: "nonNegative", required: true },
+  expected_return_percent: {
+    type: "nonNegative", required: true,
+    custom: (v) => v > 0 && v < 1
+      ? `expected_return_percent looks like a decimal (${v}) — must be whole % e.g. 10 not 0.10`
+      : null
   },
-  suggest: { type: "string", required: true },
-};
+  liquid_buffer_years: { type: "nonNegative", required: false },
 
-const goalNotAchievableSchema = {
-  type: { type: "string", required: true },
-  status: {
-    type: "string", required: true,
-    custom: (v) =>
-      v !== "Not Achievable"
-        ? `goal.status must be "Not Achievable"` : null,
-  },
-  suggest: { type: "string", required: true },
-};
 
-const goalHybridSchema = {
-  type: { type: "string", required: true },
-  status: {
-    type: "string", required: true,
-    custom: (v) =>
-      !["Achievable", "Partially Achievable", "Not Achievable"].includes(v)
-        ? `goal.status must be "Achievable", "Partially Achievable" or "Not Achievable"`
-        : null,
-  },
-  recommended_strategy: {
-    type: "string", required: true,
-    custom: (v) => {
-      const valid = ["SIP + Lumpsum Hybrid", "Lumpsum Only"];
-      return !valid.includes(v)
-        ? `recommended_strategy must be one of: ${valid.join(" | ")}`
+  _percentSum: {
+    virtual: true,
+    dependsOn: ["equity_percent", "debt_percent", "liquid_percent"],
+    custom: (_, data) => {
+      const total = (data.equity_percent ?? 0) +
+                    (data.debt_percent   ?? 0) +
+                    (data.liquid_percent ?? 0);
+      return Math.round(total) !== 100
+        ? `equity_percent + debt_percent + liquid_percent must sum to 100, got ${total}`
         : null;
-    },
+    }
   },
-  suggest: { type: "string", required: true },
 };
 
-const sipAchievableSchema = {
-  goal: { type: "object", required: true, schema: goalAchievableSchema },
-  time_horizon_years: { type: "positive", required: true },
-  amounts: { type: "object", required: true, schema: amountsSchema },
-  sip: {
+
+
+const retirementSummarySchema = {
+  current_age: {
+    type: "positive", required: true,
+    custom: (v) => v < 18 || v > 80 ? "current_age must be between 18 and 80" : null
+  },
+  target_age: {
+    type: "positive", required: true,
+    dependsOn: ["current_age"],
+    custom: (v, data) => v <= data.current_age
+      ? `target_age (${v}) must be greater than current_age (${data.current_age})` : null
+  },
+  horizon_years:   { type: "positive", required: true,  min: 1 },
+  post_goal_years: { type: "positive", required: true,  min: 1 },
+  inflation_rate:  { type: "nonNegative", required: true },
+};
+
+const nonRetirementSummarySchema = {
+  current_age:     { type: "positive",    required: false },
+  target_age:      { type: "positive",    required: false },
+  horizon_years:   { type: "positive",    required: true, min: 1 },
+  post_goal_years: { type: "positive",    required: false },
+  inflation_rate:  { type: "nonNegative", required: true },
+};
+
+
+
+const corpusSchema = {
+  target_corpus:               { type: "nonNegative", required: true },
+  projected_corpus:            { type: "nonNegative", required: true },
+  funding_gap:                 { type: "nonNegative", required: true },
+  projected_readiness_percent: {
+    type: "nonNegative", required: true,
+    custom: (v) => v > 100 ? "projected_readiness_percent cannot exceed 100" : null
+  },
+};
+
+
+
+const investmentPlanSchema = {
+  required_monthly_sip: { type: "nonNegative", required: true },
+  applied_monthly_sip:  { type: "nonNegative", required: true },
+  lumpsum_used:         { type: "nonNegative", required: true },
+  recommended_mode: {
+    type: "string", required: true,
+    custom: (v) => !VALID_MODES.includes(v)
+      ? `recommended_mode must be one of: ${VALID_MODES.join(" | ")}` : null
+  },
+  affordability: {
+    type: "string", required: true,
+    custom: (v) => !VALID_AFFORDABILITY.includes(v)
+      ? `affordability must be one of: ${VALID_AFFORDABILITY.join(" | ")}` : null
+  },
+};
+
+
+
+const withdrawalSchema = {
+  annual_required:              { type: "nonNegative", required: true },
+  safe_withdrawal_rate_percent: { type: "nonNegative", required: true },
+  sustainability_status: {
+    type: "string", required: true,
+    custom: (v) => !VALID_SUSTAIN.includes(v)
+      ? `sustainability_status must be one of: ${VALID_SUSTAIN.join(" | ")}` : null
+  },
+};
+
+
+
+const financialHealthSchema = {
+  score: {
+    type: "nonNegative", required: true,
+    custom: (v) => v > 100 ? "score cannot exceed 100" : null
+  },
+  status: {
+    type: "string", required: true,
+    custom: (v) => !VALID_HEALTH_STATUS.includes(v)
+      ? `status must be one of: ${VALID_HEALTH_STATUS.join(" | ")}` : null
+  },
+};
+
+
+
+const buildRootSchema = (isRetirement) => ({
+  goal_type: {
+    type: "string", required: true,
+    custom: (v) => !GOAL_TYPES.includes(v)
+      ? `goal_type must be one of: ${GOAL_TYPES.join(" | ")}` : null
+  },
+
+  summary: {
+    type: "object", required: true,
+    schema: isRetirement ? retirementSummarySchema : nonRetirementSummarySchema,
+  },
+
+  corpus: {
+    type: "object", required: true,
+    schema: corpusSchema,
+  },
+
+  investment_plan: {
+    type: "object", required: true,
+    schema: investmentPlanSchema,
+  },
+
+  asset_allocation: {
     type: "object", required: true,
     schema: {
-      equity_sip: { type: "positive", required: true },
-      debt_sip: { type: "positive", required: true },
-      total_sip: { type: "positive", required: true },
-      total_investment: { type: "positive", required: true },
-      expected_gain: { type: "nonNegative", required: true },
-    },
-  },
-  returns: { type: "object", required: true, schema: returnsSchema },
-  inflation_rate: { type: "nonNegative", required: true },
-};
-
-const sipNotAchievableSchema = {
-  goal: { type: "object", required: true, schema: goalNotAchievableSchema },
-};
-
-const lumpsumAchievableSchema = {
-  goal: { type: "object", required: true, schema: goalAchievableSchema },
-  time_horizon_years: { type: "positive", required: true },
-  amounts: { type: "object", required: true, schema: amountsSchema },
-  lumpsum: {
-    type: "object", required: true,
-    schema: {
-      equity_lumpsum: { type: "positive", required: true },
-      debt_lumpsum: { type: "positive", required: true },
-      total_lumpsum: { type: "positive", required: true },
-      expected_gain: { type: "nonNegative", required: true },
-    },
-  },
-  returns: { type: "object", required: true, schema: returnsSchema },
-  inflation_rate: { type: "nonNegative", required: true },
-};
-
-const lumpsumNotAchievableSchema = {
-  goal: { type: "object", required: true, schema: goalNotAchievableSchema },
-};
-
-const hybridOutputSchema = {
-  goal: { type: "object", required: true, schema: goalHybridSchema },
-  time_horizon_years: { type: "positive", required: true },
-
-  feasibility: {
-    type: "object", required: true,
-    schema: {
-      sip_affordable: { type: "boolean", required: true },
-      lumpsum_affordable: {
-        type: "boolean",
-        required: true,
-        custom: (v) => v !== true ? "lumpsum_affordable must always be true in hybrid mode" : null
+      pre_goal: {
+        type: "object", required: true,
+        schema: allocationSchema,
+      },
+      post_goal: {
+        type: "object", required: isRetirement,
+        schema: allocationSchema,
       },
     },
   },
 
-
-  amounts: { type: "object", required: true, schema: amountsSchema },
-
-  sip: {
-    type: "object", required: true,
-    schema: {
-      equity_sip: { type: "nonNegative", required: true },
-      debt_sip: { type: "nonNegative", required: true },
-      total_sip: { type: "nonNegative", required: true },
-      monthly_surplus: { type: "nonNegative", required: true },
-      shortfall: { type: "nonNegative", required: true },
-      affordable: { type: "boolean", required: true },
-    },
+  withdrawal: {
+    type: "object", required: isRetirement,
+    schema: withdrawalSchema,
   },
 
-  lumpsum: {
+  financial_health: {
     type: "object", required: true,
-    schema: {
-      equity_lumpsum: { type: "nonNegative", required: true },
-      debt_lumpsum: { type: "nonNegative", required: true },
-      total_lumpsum: { type: "nonNegative", required: true },
-      equity_lumpsum_fv: { type: "nonNegative", required: true },
-      debt_lumpsum_fv: { type: "nonNegative", required: true },
-      total_lumpsum_fv: { type: "nonNegative", required: true },
-      investable_savings: { type: "nonNegative", required: true },
-      affordable: {
-        type: "boolean",
-        required: true,
-        custom: (v) => v !== true ? "lumpsum.affordable must always be true in hybrid mode" : null
-      },
-    },
+    schema: financialHealthSchema,
   },
 
-  hybrid: {
-    type: "object", required: true,
-    schema: {
-      equity_remaining: { type: "nonNegative", required: true },
-      debt_remaining: { type: "nonNegative", required: true },
-      total_remaining: { type: "nonNegative", required: true },
-      total_investment: { type: "nonNegative", required: true },
-      expected_gain: { type: "nonNegative", required: true },
-    },
+  recommendations: {
+    required: true,
+    custom: (v) => {
+      if (!Array.isArray(v))  return "recommendations must be an array";
+      if (v.length !== 3)     return `recommendations must have exactly 3 items, got ${v.length}`;
+      for (let i = 0; i < v.length; i++) {
+        const r = v[i];
+        if (typeof r === "string" && r.trim()) continue;
+        if (typeof r === "object" && r !== null && typeof r.text === "string" && r.text.trim()) continue;
+        return `recommendations[${i}] must be a non-empty string or { id, text } object`;
+      }
+      return null;
+    }
   },
-
-  returns: { type: "object", required: true, schema: returnsSchema },
-  inflation_rate: { type: "nonNegative", required: true },
-};
-
-
-const hybridNotAchievableSchema = {
-  goal: { type: "object", required: true, schema: goalNotAchievableSchema },
-}
-
-
-const validateSIPOutput = (output) => {
-  const errors = [];
-
-  const status = output?.goal?.status;
-
-  const schema =
-    status === "Not Achievable"
-      ? sipNotAchievableSchema
-      : sipAchievableSchema;
-
-  // Schema validation
-  validateBySchema(output, schema, "", errors, true);
-
-  // Financial math validation
-  if (
-    errors.length === 0 &&
-    status === "Achievable"
-  ) {
-    errors.push(
-      ...validateFinancialIntegrity(output, INVESTMENT_MODE.SIP)
-    );
-  }
-
-  return errors;
-};
-
-
-const validateLumpsumOutput = (output) => {
-  const errors = [];
-
-  const status = output?.goal?.status;
-
-  const schema =
-    status === "Not Achievable"
-      ? lumpsumNotAchievableSchema
-      : lumpsumAchievableSchema;
-
-  // Schema validation
-  validateBySchema(output, schema, "", errors, true);
-
-  // Financial math validation
-  if (
-    errors.length === 0 &&
-    status === "Achievable"
-  ) {
-    errors.push(
-      ...validateFinancialIntegrity(output, INVESTMENT_MODE.LUMPSUM)
-    );
-  }
-
-  return errors;
-};
-
-
-const validateHybridOutput = (output) => {
-  const errors = [];
-
-  const status = output?.goal?.status;
-
-  const schema =
-    status === "Not Achievable"
-      ? hybridNotAchievableSchema
-      : hybridOutputSchema;
-
-  // Schema validation
-  validateBySchema(output, schema, "", errors, true);
-
-  // Hybrid-specific business logic
-  if (
-    errors.length === 0 &&
-    status !== "Not Achievable"
-  ) {
-    const { feasibility, sip, goal } = output;
-
-    // 1️⃣ sip_affordable must match sip.affordable
-    if (feasibility?.sip_affordable !== sip?.affordable) {
-      errors.push({
-        path: "feasibility.sip_affordable",
-        code: "CONSISTENCY_ERROR",
-        message: "feasibility.sip_affordable must match sip.affordable",
-      });
-    }
-
-    // 2️⃣ When SIP is affordable
-    if (feasibility?.sip_affordable === true) {
-      if (goal.status !== "Achievable") {
-        errors.push({
-          path: "goal.status",
-          code: "CONSISTENCY_ERROR",
-          message: 'When SIP is affordable, status must be "Achievable"',
-        });
-      }
-
-      if (goal.recommended_strategy !== "SIP + Lumpsum Hybrid") {
-        errors.push({
-          path: "goal.recommended_strategy",
-          code: "CONSISTENCY_ERROR",
-          message:
-            'When SIP is affordable, strategy must be "SIP + Lumpsum Hybrid"',
-        });
-      }
-
-      if (sip.shortfall !== 0) {
-        errors.push({
-          path: "sip.shortfall",
-          code: "CONSISTENCY_ERROR",
-          message: "When SIP is affordable, shortfall must be 0",
-        });
-      }
-    }
-
-    // 3️⃣ When SIP is NOT affordable
-    if (feasibility?.sip_affordable === false) {
-      if (
-        !["Partially Achievable", "Not Achievable"].includes(goal.status)
-      ) {
-        errors.push({
-          path: "goal.status",
-          code: "CONSISTENCY_ERROR",
-          message:
-            'When SIP is not affordable, status must be "Partially Achievable" or "Not Achievable"',
-        });
-      }
-
-      if (goal.recommended_strategy !== "Lumpsum Only") {
-        errors.push({
-          path: "goal.recommended_strategy",
-          code: "CONSISTENCY_ERROR",
-          message:
-            'When SIP is not affordable, strategy must be "Lumpsum Only"',
-        });
-      }
-
-      if (sip.shortfall === 0) {
-        errors.push({
-          path: "sip.shortfall",
-          code: "CONSISTENCY_ERROR",
-          message:
-            "When SIP is not affordable, shortfall must be greater than 0",
-        });
-      }
-    }
-  }
-
-  // Financial math validation
-  if (
-    errors.length === 0 &&
-    status === "Achievable"
-  ) {
-    errors.push(
-      ...validateFinancialIntegrity(output, INVESTMENT_MODE.HYBRID)
-    );
-  }
-
-  return errors;
-};
+});
 
 
 
-const MODE_VALIDATORS = {
-  [INVESTMENT_MODE.SIP]: validateSIPOutput,
-  [INVESTMENT_MODE.LUMPSUM]: validateLumpsumOutput,
-  [INVESTMENT_MODE.HYBRID]: validateHybridOutput,
-};
-
-const validateGoalPlanningOutput = (output, mode) => {
-  if (!output || typeof output !== "object" || Array.isArray(output)) {
+const validateGoalPlanningOutput = (normalized = {}, stopOnFirstError = false) => {
+  if (!normalized || typeof normalized !== "object" || Array.isArray(normalized)) {
     return {
       valid: false,
       errors: [{
         path: "root",
         code: "INVALID_OBJECT",
-        message: "AI output must be a valid object",
-      }],
+        message: "Normalized output must be a valid object"
+      }]
     };
   }
 
-  const normalizedMode = mode?.trim()?.toLowerCase();
+  const isRetirement = normalized.goal_type === "retirement";
+  const rootSchema   = buildRootSchema(isRetirement);
+  const errors       = [];
 
-  if (!VALID_MODES.includes(normalizedMode)) {
-    return {
-      valid: false,
-      errors: [{
-        path: "mode",
-        code: "INVALID_MODE",
-        message: `mode must be one of: ${VALID_MODES.join(", ")}`,
-      }],
-    };
-  }
+  validateBySchema(normalized, rootSchema, "", errors, stopOnFirstError);
 
-  const validator = MODE_VALIDATORS[normalizedMode];
-
-  const errors = validator(output);
-
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
+  return { valid: errors.length === 0, errors };
 };
 
 module.exports = { validateGoalPlanningOutput };
